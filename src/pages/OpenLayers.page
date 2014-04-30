@@ -1,0 +1,170 @@
+<apex:page standardController="Account" extensions="OpenLayersCtr">
+    <apex:stylesheet value="{!URLFOR($Resource.OpenLayers, 'OpenLayers-2.13.1/theme/default/style.css')}"/>
+    
+    <style>
+        .olControlAttribution {
+            bottom: 1px;
+            left: 5px;
+        }
+        .olControlScaleLine {
+            bottom: 45px;
+        }
+    </style>
+
+    <script type="text/javascript" src="{!URLFOR($Resource.OpenLayers, 'OpenLayers-2.13.1/OpenLayers.js')}"></script>
+    <script type="text/javascript" src="{!URLFOR($Resource.jQuery)}"></script>
+    <script type="text/javascript" src="{!URLFOR($Resource.Heatmap, 'heatmap/src/heatmap.js')}"></script>
+    <script type="text/javascript" src="{!URLFOR($Resource.Heatmap, 'heatmap/src/heatmap-openlayers.js')}"></script>
+    
+    <div id="map" style="width: 700px; height: 450px;"></div>
+    
+    <script>
+        // API key for Mischa Ziemen. Please get your own at
+        // http://bingmapsportal.com/ and use that instead.
+        var apiKey = "Aj5h1NVkWPqYHGWePtDkjpue9dKr8GHByx5NrpdU6Z3EoHedRcNC2_n7Yh_apOiH";
+        
+        var map, road, bingAerial, osm, mainAccount, mainAccountPoint, nearbyAccounts, heatmapLayer, vectorLayer, layer_style, style_mainAccount, style_nearbyAccounts;
+        var proj4326 = new OpenLayers.Projection("EPSG:4326");
+        var proj900913 = new OpenLayers.Projection("EPSG:900913");
+        
+        
+        /*
+         * On document read: Create map with all its featues
+         */
+        $(document).ready( function() {
+            initOpenLayers();
+            createBaseLayer();
+            changeStyles();
+            createVectorLayer();
+            createHeatmapLayer();
+        });
+		
+		/*
+		 * Define map options and create map.
+		 */ 
+        function initOpenLayers() {
+            // define map options
+            var mapoptions = {
+                projection: proj900913,
+                displayProjection: proj4326,
+                controls: [
+                    new OpenLayers.Control.Navigation(),
+                    new OpenLayers.Control.ScaleLine({
+                        geodesic: true
+                    }),
+                    new OpenLayers.Control.Attribution(),
+                    new OpenLayers.Control.MousePosition(),
+                    new OpenLayers.Control.LayerSwitcher()
+                ]
+            };
+            
+            map = new OpenLayers.Map("map", mapoptions);
+        }
+        
+        /*
+		 * Create Layers for different providers and add to map.
+		 */
+        function createBaseLayer() {
+        	road = new OpenLayers.Layer.Bing({
+                name: "Road",
+                key: apiKey,
+                type: "Road"
+            });
+        
+            bingAerial = new OpenLayers.Layer.Bing({
+                name: "Bing Aerial",
+                key: apiKey,
+                type: "Aerial"
+            });
+            
+            osm = new OpenLayers.Layer.OSM();
+            
+            map.addLayers([road, bingAerial, osm]);
+       }
+       
+		/*
+		 * Create Vector Layer for point features (Accounts).
+		 */
+		function createVectorLayer() {
+			vectorLayer = new OpenLayers.Layer.Vector("Accounts");
+            map.addLayer(vectorLayer);
+            
+            nearbyAccounts = {!nearbyAccountsJSON};
+            
+            var acc, point, feature;
+            for (var i = 0; i < nearbyAccounts.length; i++) {
+                acc = nearbyAccounts[i];
+                point = new OpenLayers.Geometry.Point(acc.Location__Longitude__s, acc.Location__Latitude__s);
+                point.transform(proj4326, map.getProjectionObject());
+                feature = new OpenLayers.Feature.Vector(point, null, style_nearbyAccounts)
+                vectorLayer.addFeatures([feature]);
+            }
+            
+            mainAccount = {!mainAccountJSON};
+            
+            mainAccountPoint = new OpenLayers.Geometry.Point(mainAccount.Location__Longitude__s, mainAccount.Location__Latitude__s);
+            mainAccountPoint.transform(proj4326, map.getProjectionObject());
+            feature = new OpenLayers.Feature.Vector(mainAccountPoint, null, style_mainAccount);
+            vectorLayer.addFeatures([feature]);
+            
+            
+            // center MAIN ACCOUNT and set zoomlevel
+            var center = new OpenLayers.LonLat(mainAccountPoint.x, mainAccountPoint.y);
+            map.setCenter(center,8);
+        }
+        
+        /*
+		 * Create Heatmap Layer with contact data for each account.
+		 */
+		function createHeatmapLayer() {
+            heatmapLayer = new OpenLayers.Layer.Heatmap( "Heatmap Layer", map, road, {visible: true, radius:60, element: 'map', legend: { position: 'br', title: 'Number of physicians'}}, {isBaseLayer: false, opacity: 0.2, projection: proj4326});
+            map.addLayer(heatmapLayer);
+			
+            var accountData = nearbyAccounts
+            accountData.push(mainAccount);
+            
+            // in order to use the OpenLayers Heatmap Layer we have to transform our data into 
+            // { max: <max>, data: [{lonlat: <OpenLayers.LonLat>, count: <count>},...]}
+            
+            var transformedData = { max: 9, data: [] },
+            geoData     		= [];
+
+            for (var i = 0; i < accountData.length; i++) {
+            	var physicianCount = 0;
+            	if (typeof(accountData[i].Contacts) != 'undefined') {
+            		physicianCount = accountData[i].Contacts.records.length;
+            	}
+                geoData.push({
+                    lonlat: new OpenLayers.LonLat(accountData[i].Location__Longitude__s, accountData[i].Location__Latitude__s),
+                    count: physicianCount
+                });
+            }
+            transformedData.data = geoData;
+            
+            heatmapLayer.setDataSet(transformedData);
+            
+            map.setLayerIndex(heatmapLayer, 2);
+        }
+        
+        /*
+         * Change styles for a good visualisation of MAIN and NEARBY ACCOUNTS.
+         */
+        function changeStyles() {
+			style_mainAccount = OpenLayers.Util.extend({}, OpenLayers.Feature.Vector.style['default']);
+			style_mainAccount.graphicWidth = 14;
+			style_mainAccount.graphicHeight = 20;
+			style_mainAccount.graphicXOffset = -(style_mainAccount.graphicWidth/2);
+			style_mainAccount.graphicYOffset = -style_mainAccount.graphicHeight;
+			style_mainAccount.externalGraphic = "{!URLFOR($Resource.OpenLayers, 'OpenLayers-2.13.1/img/marker.png')}";
+			style_mainAccount.graphicOpacity = 1;
+	       
+			style_nearbyAccounts = OpenLayers.Util.extend({}, OpenLayers.Feature.Vector.style['selected']);
+			style_nearbyAccounts.graphicWidth = 14;
+			style_nearbyAccounts.graphicHeight = 20;
+			style_nearbyAccounts.graphicXOffset = -(style_mainAccount.graphicWidth/2);
+			style_nearbyAccounts.graphicYOffset = -style_mainAccount.graphicHeight;
+			style_nearbyAccounts.externalGraphic = "{!URLFOR($Resource.OpenLayers, 'OpenLayers-2.13.1/img/marker-gold.png')}";
+			style_nearbyAccounts.graphicOpacity = 1;
+        }
+    </script>
+</apex:page>
