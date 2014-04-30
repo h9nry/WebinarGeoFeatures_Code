@@ -1,9 +1,8 @@
 public with sharing class BingGeoCoder {
 	private static final String BING_LOCATIONS_URL = 'https://dev.virtualearth.net/REST/v1/Locations';
 	
-	// API key for Mischa Ziemen. Please get your own at
-    // http://bingmapsportal.com/ and use that instead.
-	private static final String BING_KEY = 'Aj5h1NVkWPqYHGWePtDkjpue9dKr8GHByx5NrpdU6Z3EoHedRcNC2_n7Yh_apOiH';
+	// Please get your own API key at http://bingmapsportal.com/
+	private static final String BING_KEY = 'YOURKEYGOESHERE';
 	
 	/**
 	 * Performes a Bing Maps geocoding based upon the passed in input parameter.
